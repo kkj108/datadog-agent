@@ -119,23 +119,10 @@ func generateRandomTags() []string {
 }
 
 func processRandomTagInfoBatch(store *tagStore) {
-	// tagInfos := make([]*collectors.TagInfo, 0, batchSize)
-
+	tagInfos := make([]*collectors.TagInfo, 0, batchSize)
 	for i := 0; i < batchSize; i++ {
-		tagInfo := generateRandomTagInfo()
-
-		// the current version of processTagInfo does not
-		// support batches, so it's called inside the loop
-		// instead of with a batch of tagInfos outside of it.
-		// once it's upgraded, this loop should only build
-		// tagInfos by uncommenting the line below. it's not a
-		// completely direct comparison, but it's close enough.
-		//   tagInfos = append(tagInfos, tagInfo)
-		store.processTagInfo(tagInfo)
+		tagInfos = append(tagInfos, generateRandomTagInfo())
 	}
 
-	// NOTE: when processTagInfo is upgraded to support batches, it
-	// should be called here instead of inside the loop above by
-	// uncommenting the line below.
-	//   store.processTagInfo(tagInfos)
+	store.processTagInfo(tagInfos)
 }
