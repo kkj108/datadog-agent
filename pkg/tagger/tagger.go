@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/config"
+	"github.com/DataDog/datadog-agent/pkg/util/containers"
+	"github.com/DataDog/datadog-agent/pkg/util/containers/providers"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 
 	"github.com/DataDog/datadog-agent/cmd/agent/api/response"
@@ -299,6 +301,18 @@ func (t *Tagger) Standard(entity string) ([]string, error) {
 		_, _ = t.Tag(entity, collectors.LowCardinality)
 	}
 	return t.tagStore.lookupStandard(entity)
+}
+
+// AgentTags returns the agent tags
+// It relies on the container provider utils to get the Agent container ID
+func (t *Tagger) AgentTags(cardinality collectors.TagCardinality) ([]string, error) {
+	ctrID, err := providers.ContainerImpl().GetAgentCID()
+	if err != nil {
+		return nil, err
+	}
+
+	entityID := containers.BuildTaggerEntityName(ctrID)
+	return t.Tag(entityID, cardinality)
 }
 
 // List the content of the tagger

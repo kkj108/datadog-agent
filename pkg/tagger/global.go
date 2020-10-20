@@ -61,6 +61,11 @@ func StandardTags(entity string) ([]string, error) {
 	return defaultTagger.Standard(entity)
 }
 
+// AgentTags returns the agent tags
+func AgentTags(cardinality collectors.TagCardinality) ([]string, error) {
+	return defaultTagger.AgentTags(cardinality)
+}
+
 // OrchestratorScopeTag queries tags for orchestrator scope (e.g. task_arn in ECS Fargate)
 func OrchestratorScopeTag() ([]string, error) {
 	return defaultTagger.Tag(collectors.OrchestratorScopeEntityID, collectors.OrchestratorCardinality)
