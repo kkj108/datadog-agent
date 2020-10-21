@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"regexp"
+	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/security/rules"
 	"github.com/DataDog/datadog-agent/pkg/security/secl/eval"
@@ -41,49 +41,60 @@ func (f *FilterPolicy) Bytes() ([]byte, error) {
 func isParentPathDiscarder(rs *rules.RuleSet, eventType eval.EventType, filename string) (bool, error) {
 	dirname := filepath.Dir(filename)
 
-	// ensure we don't push parent discarder if there is another rule relying on the parent path
-	// ex: rule      open.filename == "/etc/passwd"
-	//     discarder /etc/fstab
-	// /etc/fstab is a discarder but not the parent
-	re, err := regexp.Compile("^" + dirname + "/.*$")
-	if err != nil {
-		return false, err
+	bucket := rs.GetBucket(eventType)
+	if bucket == nil {
+		return false, nil
 	}
 
-	values := rs.GetFieldValues(eventType + ".filename")
-	for _, value := range values {
-		if re.MatchString(value.Value.(string)) {
-			return false, nil
+	event := NewEvent(nil)
+
+	for _, rule := range bucket.GetRules() {
+		// ensure we don't push parent discarder if there is another rule relying on the parent path
+
+		// first case: rule contains a filename field
+		// ex: rule		open.filename == "/etc/passwd"
+		//     discarder /etc/fstab
+		// /etc/fstab is a discarder but not the parent
+
+		// second case: rule doesn't contain a filename field but a basename field
+		// ex: rule	 	open.basename == "conf.d"
+		//     discarder /etc/conf.d/httpd.conf
+		// /etc/conf.d/httpd.conf is a discarder but not the parent
+
+		// check filename
+		fileField := eventType + ".filename"
+
+		if values := rule.GetFieldValues(fileField); len(values) > 0 {
+			for _, value := range values {
+				if strings.HasPrefix(value.Value.(string), dirname) {
+					return false, nil
+				}
+			}
+
+			if err := event.SetFieldValue(fileField, dirname); err != nil {
+				return false, err
+			}
+
+			if isDiscarder, _ := rs.IsDiscarder(event, fileField); isDiscarder {
+				return true, nil
+			}
 		}
-	}
 
-	// check basename, assuming there is a basename field
-	// ensure that we don't discard a parent that matches a basename rule
-	// ex: rule     open.basename == ".ssh"
-	//     discader /root/.ssh/id_rsa
-	// we can't discard /root/.ssh as basename rule matches it
-	// Note: This shouldn't happen we can't have a discarder working on multiple fields.
-	//       ex: open.filename == "/etc/passwd"
-	//           open.basename == "shadow"
-	//       These rules won't return any discarder
-	var isDiscarder bool
+		// check basename
+		baseField := eventType + ".basename"
 
-	field := eventType + ".basename"
-	if values := rs.GetFieldValues(field); len(values) == 0 {
-		isDiscarder = true
-	} else {
-		isDiscarder, err = rs.IsDiscarder(field, path.Base(dirname))
-		if err != nil {
-			if _, ok := err.(*eval.ErrFieldNotFound); ok {
-				// no basename rule so we can discard
-				isDiscarder = true
+		if values := rule.GetFieldValues(baseField); len(values) > 0 {
+			if err := event.SetFieldValue(baseField, path.Base(dirname)); err != nil {
+				return false, err
+			}
+
+			if isDiscarder, _ := rs.IsDiscarder(event, baseField); !isDiscarder {
+				return false, nil
 			}
 		}
 	}
 
-	if isDiscarder {
-		log.Tracef("`%s` discovered as parent discarder", dirname)
-	}
+	log.Tracef("`%s` discovered as parent discarder", dirname)
 
-	return isDiscarder, nil
+	return true, nil
 }
